@@ -14,13 +14,19 @@ namespace CndXML
     {
         static void Main(string[] args)
         {
-            if (args.Length > 0)
+            if (args.Length > 1)
             {
-                if (File.Exists(args[0]))
+                if (args[0] == "-d")
                 {
+                    if (!File.Exists(args[1]))
+                    {
+                        Console.WriteLine("Error: File does not exist!");
+                        return;
+                    }
+
                     Console.WriteLine("Reading CND Binary...");
 
-                    CNDBin cnd = new CNDBin(args[0]);
+                    CNDBin cnd = new CNDBin(args[1]);
 
                     Console.WriteLine("Creating XML file...");
 
@@ -30,6 +36,7 @@ namespace CndXML
                     XmlElement root = xml.CreateElement("CND");
                     root.SetAttribute("name", cnd.Name);
                     root.SetAttribute("type", cnd.Type);
+                    root.SetAttribute("isKF2", cnd.NewVersion.ToString());
 
                     XmlElement visSection = xml.CreateElement("VisualSection");
                     for (int i = 0; i < cnd.VisualSection.Count; i++)
@@ -48,6 +55,7 @@ namespace CndXML
                             {
                                 XmlElement variable = xml.CreateElement(cnd.VisualSection[i].Groups[g].Variables[v].Type);
                                 variable.SetAttribute("name", cnd.VisualSection[i].Groups[g].Variables[v].Name);
+                                variable.SetAttribute("flags", cnd.VisualSection[i].Groups[g].Variables[v].Flags.ToString());
 
                                 if (cnd.VisualSection[i].Groups[g].Variables[v].Type == "Color4")
                                 {
@@ -109,6 +117,7 @@ namespace CndXML
                             {
                                 XmlElement variable = xml.CreateElement(cnd.RenderSection[i].Groups[g].Variables[v].Type);
                                 variable.SetAttribute("name", cnd.RenderSection[i].Groups[g].Variables[v].Name);
+                                variable.SetAttribute("flags", cnd.RenderSection[i].Groups[g].Variables[v].Flags.ToString());
 
                                 if (cnd.RenderSection[i].Groups[g].Variables[v].Type == "Color4")
                                 {
@@ -158,18 +167,175 @@ namespace CndXML
 
                     xml.AppendChild(root);
 
-                    xml.Save(Path.GetDirectoryName(args[0]) + "\\" + Path.GetFileNameWithoutExtension(args[0]) + ".xml");
+                    xml.Save(Path.GetDirectoryName(args[1]) + "\\" + Path.GetFileNameWithoutExtension(args[1]) + ".xml");
 
-                    Console.WriteLine($"Written XML file to {Path.GetDirectoryName(args[0])}\\{Path.GetFileNameWithoutExtension(args[0])}.xml");
+                    Console.WriteLine($"Written XML file to {Path.GetDirectoryName(args[1])}\\{Path.GetFileNameWithoutExtension(args[1])}.xml");
+                }
+                else if (args[0] == "-a")
+                {
+                    if (!File.Exists(args[1]))
+                    {
+                        Console.WriteLine("Error: File does not exist!");
+                        return;
+                    }
+
+                    Console.WriteLine("Reading XML file...");
+
+                    XmlDocument xml = new XmlDocument();
+                    xml.Load(args[1]);
+                    string name = xml["CND"].GetAttribute("name");
+                    string type = xml["CND"].GetAttribute("type");
+                    bool newVer = bool.Parse(xml["CND"].GetAttribute("isKF2"));
+
+                    Console.WriteLine("Creating CND binary...");
+
+                    CNDBin cnd = new CNDBin(name, type, newVer, Endianness.Little);
+
+                    XmlElement cSection = xml["CND"]["VisualSection"];
+                    for (int i = 0; i < cSection.ChildNodes.Count; i++)
+                    {
+                        XmlNode structNode = cSection.ChildNodes[i];
+                        CNDStruct cStruct = new CNDStruct(structNode.Attributes["name"].Value, structNode.Attributes["type"].Value, uint.Parse(structNode.Attributes["flags"].Value));
+                        for (int g = 0; g < structNode.ChildNodes.Count; g++)
+                        {
+                            XmlNode groupNode = structNode.ChildNodes[g];
+                            CNDGroup cGroup = new CNDGroup(groupNode.Attributes["name"].Value);
+                            for (int v = 0; v < groupNode.ChildNodes.Count; v++)
+                            {
+                                XmlNode varNode = groupNode.ChildNodes[v];
+                                string vName = varNode.Attributes["name"].Value;
+                                string vType = varNode.Name;
+                                uint vFlags = uint.Parse(varNode.Attributes["flags"].Value);
+                                object vValue;
+                                switch (vType)
+                                {
+                                    case "Int":
+                                        {
+                                            vValue = int.Parse(varNode.InnerText);
+                                            break;
+                                        }
+                                    case "Float":
+                                        {
+                                            vValue = float.Parse(varNode.InnerText);
+                                            break;
+                                        }
+                                    case "Bool":
+                                        {
+                                            vValue = bool.Parse(varNode.InnerText);
+                                            break;
+                                        }
+                                    case "String":
+                                        {
+                                            vValue = varNode.InnerText;
+                                            break;
+                                        }
+                                    case "Vec3":
+                                        {
+                                            vValue = new float[3] {
+                                                float.Parse(varNode["X"].InnerText),
+                                                float.Parse(varNode["Y"].InnerText),
+                                                float.Parse(varNode["Z"].InnerText),
+                                            };
+                                            break;
+                                        }
+                                    case "Color4":
+                                        {
+                                            vValue = Color.FromArgb(byte.Parse(varNode["A"].InnerText),
+                                                    byte.Parse(varNode["R"].InnerText),
+                                                    byte.Parse(varNode["G"].InnerText),
+                                                    byte.Parse(varNode["B"].InnerText));
+                                            break;
+                                        }
+                                    default:
+                                        {
+                                            throw new NotImplementedException("Unknown CND variable type");
+                                        }
+                                }
+                                cGroup.Variables.Add(new CNDVariable(vName, vType, vFlags, vValue));
+                            }
+                            cStruct.Groups.Add(cGroup);
+                        }
+                        cnd.VisualSection.Add(cStruct);
+                    }
+
+                    cSection = xml["CND"]["RenderSection"];
+                    for (int i = 0; i < cSection.ChildNodes.Count; i++)
+                    {
+                        XmlNode structNode = cSection.ChildNodes[i];
+                        CNDStruct cStruct = new CNDStruct(structNode.Attributes["name"].Value, structNode.Attributes["type"].Value, uint.Parse(structNode.Attributes["flags"].Value));
+                        for (int g = 0; g < structNode.ChildNodes.Count; g++)
+                        {
+                            XmlNode groupNode = structNode.ChildNodes[g];
+                            CNDGroup cGroup = new CNDGroup(groupNode.Attributes["name"].Value);
+                            for (int v = 0; v < groupNode.ChildNodes.Count; v++)
+                            {
+                                XmlNode varNode = groupNode.ChildNodes[v];
+                                string vName = varNode.Attributes["name"].Value;
+                                string vType = varNode.Name;
+                                uint vFlags = uint.Parse(varNode.Attributes["flags"].Value);
+                                object vValue;
+                                switch (vType)
+                                {
+                                    case "Int":
+                                        {
+                                            vValue = int.Parse(varNode.InnerText);
+                                            break;
+                                        }
+                                    case "Float":
+                                        {
+                                            vValue = float.Parse(varNode.InnerText);
+                                            break;
+                                        }
+                                    case "Bool":
+                                        {
+                                            vValue = bool.Parse(varNode.InnerText);
+                                            break;
+                                        }
+                                    case "String":
+                                        {
+                                            vValue = varNode.InnerText;
+                                            break;
+                                        }
+                                    case "Vec3":
+                                        {
+                                            vValue = new float[3] {
+                                                float.Parse(varNode["X"].InnerText),
+                                                float.Parse(varNode["Y"].InnerText),
+                                                float.Parse(varNode["Z"].InnerText),
+                                            };
+                                            break;
+                                        }
+                                    case "Color4":
+                                        {
+                                            vValue = Color.FromArgb(byte.Parse(varNode["A"].InnerText),
+                                                    byte.Parse(varNode["R"].InnerText),
+                                                    byte.Parse(varNode["G"].InnerText),
+                                                    byte.Parse(varNode["B"].InnerText));
+                                            break;
+                                        }
+                                    default:
+                                        {
+                                            throw new NotImplementedException("Unknown CND variable type");
+                                        }
+                                }
+                                cGroup.Variables.Add(new CNDVariable(vName, vType, vFlags, vValue));
+                            }
+                            cStruct.Groups.Add(cGroup);
+                        }
+                        cnd.RenderSection.Add(cStruct);
+                    }
+
+                    cnd.Write(Path.GetDirectoryName(args[1]) + "\\" + Path.GetFileNameWithoutExtension(args[1]) + ".cndbin");
+                    Console.WriteLine($"Written CND binary to {Path.GetDirectoryName(args[1])}\\{Path.GetFileNameWithoutExtension(args[1])}.cndbin");
                 }
                 else
                 {
-                    Console.WriteLine("Error: File does not exist!");
+                    Console.WriteLine("Usage: CndXML.exe <-d|-a> <cndbin path>");
                 }
             }
             else
             {
-                Console.WriteLine("Usage: CndXML.exe <cndbin path>");
+                Console.WriteLine("Usage: CndXML.exe <-d|-a> <cndbin path>");
             }
         }
     }

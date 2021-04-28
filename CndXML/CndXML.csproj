@@ -49,6 +49,7 @@
     <Compile Include="EndianBinaryWriter.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Util.cs" />
     <Compile Include="XData.cs" />
   </ItemGroup>
   <ItemGroup>

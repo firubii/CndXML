@@ -17,13 +17,16 @@ namespace CndXML
         public List<CNDStruct> VisualSection;
         public List<CNDStruct> RenderSection;
 
-        public CNDBin(string name, string type, Endianness endianness)
+        public bool NewVersion;
+
+        public CNDBin(string name, string type, bool isNewVersion, Endianness endianness)
         {
             XData = new XData(endianness);
             Name = name;
             Type = type;
             VisualSection = new List<CNDStruct>();
             RenderSection = new List<CNDStruct>();
+            NewVersion = isNewVersion;
         }
 
         public CNDBin(string filePath)
@@ -69,6 +72,405 @@ namespace CndXML
                 reader.BaseStream.Seek(reader.ReadUInt32(), SeekOrigin.Begin);
                 RenderSection.Add(new CNDStruct(reader));
             }
+
+            if (VisualSection.Count > 0)
+                if (VisualSection[0].Groups[0].Name != "")
+                    NewVersion = true;
+            else if (RenderSection.Count > 0)
+                if (RenderSection[0].Groups[0].Name != "")
+                    NewVersion = true;
+        }
+
+        public void Write(string filePath)
+        {
+            using (EndianBinaryWriter writer = new EndianBinaryWriter(new FileStream(filePath, FileMode.Create, FileAccess.Write)))
+                Write(writer);
+        }
+
+        public void Write(EndianBinaryWriter writer)
+        {
+            XData.Write(writer);
+            writer.Write(10100);
+            writer.Write(0);
+            writer.Write(0x24);
+            writer.Write(-1);
+            writer.Write(0);
+            writer.Write(-1);
+            writer.Write(-1);
+            writer.Write(0x34);
+
+            writer.Write(RenderSection.Count);
+            long pos = writer.BaseStream.Position;
+            for (int i = 0; i < RenderSection.Count; i++)
+            {
+                writer.Write(-1);
+            }
+            List<long> rndStructOffsets = new List<long>();
+            List<long[]> rndGroupOffsets = new List<long[]>();
+            List<long[][]> rndVarOffsets = new List<long[][]>();
+            for (int i = 0; i < RenderSection.Count; i++)
+            {
+                List<long> groups = new List<long>();
+                List<long[]> allVars = new List<long[]>();
+
+                writer.BaseStream.Seek(pos + (i * 4), SeekOrigin.Begin);
+                writer.Write((uint)writer.BaseStream.Length);
+                writer.BaseStream.Seek(0, SeekOrigin.End);
+
+                rndStructOffsets.Add(writer.BaseStream.Position);
+                writer.Write(-1);
+                writer.Write(-1);
+                writer.Write(RenderSection[i].Flags);
+                writer.Write((uint)writer.BaseStream.Length + 4);
+
+                if (NewVersion)
+                {
+                    writer.Write(RenderSection[i].Groups.Count);
+                    long gPos = writer.BaseStream.Position;
+                    for (int g = 0; g < RenderSection[i].Groups.Count; g++)
+                    {
+                        writer.Write(-1);
+                    }
+                    for (int g = 0; g < RenderSection[i].Groups.Count; g++)
+                    {
+                        List<long> vars = new List<long>();
+
+                        writer.BaseStream.Seek(gPos + (g * 4), SeekOrigin.Begin);
+                        writer.Write((uint)writer.BaseStream.Length);
+                        writer.BaseStream.Seek(0, SeekOrigin.End);
+
+                        groups.Add(writer.BaseStream.Position);
+                        writer.Write(-1);
+                        writer.Write((uint)writer.BaseStream.Length + 4);
+
+                        writer.Write(RenderSection[i].Groups[g].Variables.Count);
+                        long vPos = writer.BaseStream.Position;
+                        for (int v = 0; v < RenderSection[i].Groups[g].Variables.Count; v++)
+                        {
+                            writer.Write(-1);
+                        }
+                        for (int v = 0; v < RenderSection[i].Groups[g].Variables.Count; v++)
+                        {
+                            writer.BaseStream.Seek(vPos + (v * 4), SeekOrigin.Begin);
+                            writer.Write((uint)writer.BaseStream.Length);
+                            writer.BaseStream.Seek(0, SeekOrigin.End);
+
+                            vars.Add(writer.BaseStream.Position);
+                            writer.Write(-1);
+                            writer.Write(-1);
+                            writer.Write(RenderSection[i].Groups[g].Variables[v].Flags);
+
+                            if (RenderSection[i].Groups[g].Variables[v].Type == "String")
+                            {
+                                writer.Write(0);
+                                writer.Write(RenderSection[i].Groups[g].Variables[v].Data.Length);
+                                writer.Write(RenderSection[i].Groups[g].Variables[v].Data);
+                                writer.Write(0);
+                                while ((writer.BaseStream.Length & 0xF) != 0x0
+                                    && (writer.BaseStream.Length & 0xF) != 0x4
+                                    && (writer.BaseStream.Length & 0xF) != 0x8
+                                    && (writer.BaseStream.Length & 0xF) != 0xC)
+                                    writer.Write((byte)0);
+                            }
+                            else
+                            {
+                                writer.Write(RenderSection[i].Groups[g].Variables[v].Data.Length);
+                                writer.Write(RenderSection[i].Groups[g].Variables[v].Data);
+                            }
+                        }
+                        allVars.Add(vars.ToArray());
+                    }
+                    rndGroupOffsets.Add(groups.ToArray());
+                }
+                else
+                {
+                    List<long> vars = new List<long>();
+                    writer.Write(RenderSection[i].Groups[0].Variables.Count);
+                    long vPos = writer.BaseStream.Position;
+                    for (int v = 0; v < RenderSection[i].Groups[0].Variables.Count; v++)
+                    {
+                        writer.Write(-1);
+                    }
+                    for (int v = 0; v < RenderSection[i].Groups[0].Variables.Count; v++)
+                    {
+                        writer.BaseStream.Seek(vPos + (v * 4), SeekOrigin.Begin);
+                        writer.Write((uint)writer.BaseStream.Length);
+                        writer.BaseStream.Seek(0, SeekOrigin.End);
+
+                        vars.Add(writer.BaseStream.Position);
+                        writer.Write(-1);
+                        writer.Write(-1);
+                        writer.Write(RenderSection[i].Groups[0].Variables[v].Flags);
+
+                        if (RenderSection[i].Groups[0].Variables[v].Type == "String")
+                        {
+                            writer.Write(0);
+                            writer.Write(RenderSection[i].Groups[0].Variables[v].Data.Length);
+                            writer.Write(RenderSection[i].Groups[0].Variables[v].Data);
+                            writer.Write(0);
+                            while ((writer.BaseStream.Length & 0xF) != 0x0
+                                && (writer.BaseStream.Length & 0xF) != 0x4
+                                && (writer.BaseStream.Length & 0xF) != 0x8
+                                && (writer.BaseStream.Length & 0xF) != 0xC)
+                                writer.Write((byte)0);
+                        }
+                        else
+                        {
+                            writer.Write(RenderSection[i].Groups[0].Variables[v].Data.Length);
+                            writer.Write(RenderSection[i].Groups[0].Variables[v].Data);
+                        }
+                    }
+                    allVars.Add(vars.ToArray());
+                }
+                rndVarOffsets.Add(allVars.ToArray());
+            }
+
+            writer.BaseStream.Seek(0x20, SeekOrigin.Begin);
+            writer.Write((uint)writer.BaseStream.Length);
+            writer.BaseStream.Seek(0, SeekOrigin.End);
+
+            writer.Write(VisualSection.Count);
+            pos = writer.BaseStream.Position;
+            for (int i = 0; i < VisualSection.Count; i++)
+            {
+                writer.Write(-1);
+            }
+            List<long> visStructOffsets = new List<long>();
+            List<long[]> visGroupOffsets = new List<long[]>();
+            List<long[][]> visVarOffsets = new List<long[][]>();
+            for (int i = 0; i < VisualSection.Count; i++)
+            {
+                List<long> groups = new List<long>();
+                List<long[]> allVars = new List<long[]>();
+
+                writer.BaseStream.Seek(pos + (i * 4), SeekOrigin.Begin);
+                writer.Write((uint)writer.BaseStream.Length);
+                writer.BaseStream.Seek(0, SeekOrigin.End);
+
+                visStructOffsets.Add(writer.BaseStream.Position);
+                writer.Write(-1);
+                writer.Write(-1);
+                writer.Write(VisualSection[i].Flags);
+                writer.Write((uint)writer.BaseStream.Length + 4);
+
+                if (NewVersion)
+                {
+                    writer.Write(VisualSection[i].Groups.Count);
+                    long gPos = writer.BaseStream.Position;
+                    for (int g = 0; g < VisualSection[i].Groups.Count; g++)
+                    {
+                        writer.Write(-1);
+                    }
+                    for (int g = 0; g < VisualSection[i].Groups.Count; g++)
+                    {
+                        List<long> vars = new List<long>();
+
+                        writer.BaseStream.Seek(gPos + (g * 4), SeekOrigin.Begin);
+                        writer.Write((uint)writer.BaseStream.Length);
+                        writer.BaseStream.Seek(0, SeekOrigin.End);
+
+                        groups.Add(writer.BaseStream.Position);
+                        writer.Write(-1);
+                        writer.Write((uint)writer.BaseStream.Length + 4);
+
+                        writer.Write(VisualSection[i].Groups[g].Variables.Count);
+                        long vPos = writer.BaseStream.Position;
+                        for (int v = 0; v < VisualSection[i].Groups[g].Variables.Count; v++)
+                        {
+                            writer.Write(-1);
+                        }
+                        for (int v = 0; v < VisualSection[i].Groups[g].Variables.Count; v++)
+                        {
+                            writer.BaseStream.Seek(vPos + (v * 4), SeekOrigin.Begin);
+                            writer.Write((uint)writer.BaseStream.Length);
+                            writer.BaseStream.Seek(0, SeekOrigin.End);
+
+                            vars.Add(writer.BaseStream.Position);
+                            writer.Write(-1);
+                            writer.Write(-1);
+                            writer.Write(VisualSection[i].Groups[g].Variables[v].Flags);
+
+                            if (VisualSection[i].Groups[g].Variables[v].Type == "String")
+                            {
+                                writer.Write(0);
+                                writer.Write(VisualSection[i].Groups[g].Variables[v].Data.Length);
+                                writer.Write(VisualSection[i].Groups[g].Variables[v].Data);
+                                writer.Write(0);
+                                while ((writer.BaseStream.Length & 0xF) != 0x0
+                                    && (writer.BaseStream.Length & 0xF) != 0x4
+                                    && (writer.BaseStream.Length & 0xF) != 0x8
+                                    && (writer.BaseStream.Length & 0xF) != 0xC)
+                                    writer.Write((byte)0);
+                            }
+                            else
+                            {
+                                writer.Write(VisualSection[i].Groups[g].Variables[v].Data.Length);
+                                writer.Write(VisualSection[i].Groups[g].Variables[v].Data);
+                            }
+                        }
+                        allVars.Add(vars.ToArray());
+                    }
+                    visGroupOffsets.Add(groups.ToArray());
+                }
+                else
+                {
+                    List<long> vars = new List<long>();
+                    writer.Write(VisualSection[i].Groups[0].Variables.Count);
+                    long vPos = writer.BaseStream.Position;
+                    for (int v = 0; v < VisualSection[i].Groups[0].Variables.Count; v++)
+                    {
+                        writer.Write(-1);
+                    }
+                    for (int v = 0; v < VisualSection[i].Groups[0].Variables.Count; v++)
+                    {
+                        writer.BaseStream.Seek(vPos + (v * 4), SeekOrigin.Begin);
+                        writer.Write((uint)writer.BaseStream.Length);
+                        writer.BaseStream.Seek(0, SeekOrigin.End);
+
+                        vars.Add(writer.BaseStream.Position);
+                        writer.Write(-1);
+                        writer.Write(-1);
+                        writer.Write(VisualSection[i].Groups[0].Variables[v].Flags);
+
+                        if (VisualSection[i].Groups[0].Variables[v].Type == "String")
+                        {
+                            writer.Write(0);
+                            writer.Write(VisualSection[i].Groups[0].Variables[v].Data.Length);
+                            writer.Write(VisualSection[i].Groups[0].Variables[v].Data);
+                            writer.Write(0);
+                            while ((writer.BaseStream.Length & 0xF) != 0x0
+                                && (writer.BaseStream.Length & 0xF) != 0x4
+                                && (writer.BaseStream.Length & 0xF) != 0x8
+                                && (writer.BaseStream.Length & 0xF) != 0xC)
+                                writer.Write((byte)0);
+                        }
+                        else
+                        {
+                            writer.Write(VisualSection[i].Groups[0].Variables[v].Data.Length);
+                            writer.Write(VisualSection[i].Groups[0].Variables[v].Data);
+                        }
+                    }
+                    allVars.Add(vars.ToArray());
+                }
+                visVarOffsets.Add(allVars.ToArray());
+            }
+
+            writer.BaseStream.Seek(0x28, SeekOrigin.Begin);
+            writer.Write((uint)writer.BaseStream.Length);
+            writer.BaseStream.Seek(0, SeekOrigin.End);
+            WriteUtil.WriteString(writer, Name);
+
+            writer.BaseStream.Seek(0x2C, SeekOrigin.Begin);
+            writer.Write((uint)writer.BaseStream.Length);
+            writer.BaseStream.Seek(0, SeekOrigin.End);
+            WriteUtil.WriteString(writer, Type);
+
+            for (int i = 0; i < rndStructOffsets.Count; i++)
+            {
+                writer.BaseStream.Seek(rndStructOffsets[i], SeekOrigin.Begin);
+                writer.Write((uint)writer.BaseStream.Length);
+                writer.BaseStream.Seek(0, SeekOrigin.End);
+                WriteUtil.WriteString(writer, RenderSection[i].Name);
+
+                writer.BaseStream.Seek(rndStructOffsets[i] + 4, SeekOrigin.Begin);
+                writer.Write((uint)writer.BaseStream.Length);
+                writer.BaseStream.Seek(0, SeekOrigin.End);
+                WriteUtil.WriteString(writer, RenderSection[i].Type);
+
+                if (NewVersion)
+                {
+                    for (int g = 0; g < rndGroupOffsets[i].Length; g++)
+                    {
+                        writer.BaseStream.Seek(rndGroupOffsets[i][g], SeekOrigin.Begin);
+                        writer.Write((uint)writer.BaseStream.Length);
+                        writer.BaseStream.Seek(0, SeekOrigin.End);
+                        WriteUtil.WriteString(writer, RenderSection[i].Groups[g].Name);
+
+                        for (int v = 0; v < rndVarOffsets[i][g].Length; v++)
+                        {
+                            writer.BaseStream.Seek(rndVarOffsets[i][g][v], SeekOrigin.Begin);
+                            writer.Write((uint)writer.BaseStream.Length);
+                            writer.BaseStream.Seek(0, SeekOrigin.End);
+                            WriteUtil.WriteString(writer, RenderSection[i].Groups[g].Variables[v].Name);
+
+                            writer.BaseStream.Seek(rndVarOffsets[i][g][v] + 4, SeekOrigin.Begin);
+                            writer.Write((uint)writer.BaseStream.Length);
+                            writer.BaseStream.Seek(0, SeekOrigin.End);
+                            WriteUtil.WriteString(writer, RenderSection[i].Groups[g].Variables[v].Type);
+                        }
+                    }
+                }
+                else
+                {
+                    for (int v = 0; v < rndVarOffsets[i][0].Length; v++)
+                    {
+                        writer.BaseStream.Seek(rndVarOffsets[i][0][v], SeekOrigin.Begin);
+                        writer.Write((uint)writer.BaseStream.Length);
+                        writer.BaseStream.Seek(0, SeekOrigin.End);
+                        WriteUtil.WriteString(writer, RenderSection[i].Groups[0].Variables[v].Name);
+
+                        writer.BaseStream.Seek(rndVarOffsets[i][0][v] + 4, SeekOrigin.Begin);
+                        writer.Write((uint)writer.BaseStream.Length);
+                        writer.BaseStream.Seek(0, SeekOrigin.End);
+                        WriteUtil.WriteString(writer, RenderSection[i].Groups[0].Variables[v].Type);
+                    }
+                }
+            }
+
+            for (int i = 0; i < visStructOffsets.Count; i++)
+            {
+                writer.BaseStream.Seek(visStructOffsets[i], SeekOrigin.Begin);
+                writer.Write((uint)writer.BaseStream.Length);
+                writer.BaseStream.Seek(0, SeekOrigin.End);
+                WriteUtil.WriteString(writer, VisualSection[i].Name);
+
+                writer.BaseStream.Seek(visStructOffsets[i] + 4, SeekOrigin.Begin);
+                writer.Write((uint)writer.BaseStream.Length);
+                writer.BaseStream.Seek(0, SeekOrigin.End);
+                WriteUtil.WriteString(writer, VisualSection[i].Type);
+
+                if (NewVersion)
+                {
+                    for (int g = 0; g < visGroupOffsets[i].Length; g++)
+                    {
+                        writer.BaseStream.Seek(visGroupOffsets[i][g], SeekOrigin.Begin);
+                        writer.Write((uint)writer.BaseStream.Length);
+                        writer.BaseStream.Seek(0, SeekOrigin.End);
+                        WriteUtil.WriteString(writer, VisualSection[i].Groups[g].Name);
+
+                        for (int v = 0; v < visVarOffsets[i][g].Length; v++)
+                        {
+                            writer.BaseStream.Seek(visVarOffsets[i][g][v], SeekOrigin.Begin);
+                            writer.Write((uint)writer.BaseStream.Length);
+                            writer.BaseStream.Seek(0, SeekOrigin.End);
+                            WriteUtil.WriteString(writer, VisualSection[i].Groups[g].Variables[v].Name);
+
+                            writer.BaseStream.Seek(visVarOffsets[i][g][v] + 4, SeekOrigin.Begin);
+                            writer.Write((uint)writer.BaseStream.Length);
+                            writer.BaseStream.Seek(0, SeekOrigin.End);
+                            WriteUtil.WriteString(writer, VisualSection[i].Groups[g].Variables[v].Type);
+                        }
+                    }
+                }
+                else
+                {
+                    for (int v = 0; v < visVarOffsets[i][0].Length; v++)
+                    {
+                        writer.BaseStream.Seek(visVarOffsets[i][0][v], SeekOrigin.Begin);
+                        writer.Write((uint)writer.BaseStream.Length);
+                        writer.BaseStream.Seek(0, SeekOrigin.End);
+                        WriteUtil.WriteString(writer, VisualSection[i].Groups[0].Variables[v].Name);
+
+                        writer.BaseStream.Seek(visVarOffsets[i][0][v] + 4, SeekOrigin.Begin);
+                        writer.Write((uint)writer.BaseStream.Length);
+                        writer.BaseStream.Seek(0, SeekOrigin.End);
+                        WriteUtil.WriteString(writer, VisualSection[i].Groups[0].Variables[v].Type);
+                    }
+                }
+            }
+
+            XData.UpdateFilesize(writer);
+            XData.WriteFooter(writer);
         }
     }
 
@@ -267,9 +669,9 @@ namespace CndXML
                     {
                         float[] v = value as float[];
                         Data = new byte[12];
-                        Buffer.BlockCopy(BitConverter.GetBytes(v[0]), 0, Data, 0, 4);
-                        Buffer.BlockCopy(BitConverter.GetBytes(v[1]), 0, Data, 4, 4);
-                        Buffer.BlockCopy(BitConverter.GetBytes(v[2]), 0, Data, 8, 4);
+                        Array.Copy(BitConverter.GetBytes(v[0]), 0, Data, 0, 4);
+                        Array.Copy(BitConverter.GetBytes(v[1]), 0, Data, 4, 4);
+                        Array.Copy(BitConverter.GetBytes(v[2]), 0, Data, 8, 4);
                         break;
                     }
                 case "String":

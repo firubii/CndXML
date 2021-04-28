@@ -61,6 +61,7 @@ namespace CndXML
             writer.Write(Version);
             writer.Write(-1);
             writer.Write(Unknown0C);
+            writer.Write(-1);
         }
 
         public void UpdateFilesize(EndianBinaryWriter writer)
@@ -69,6 +70,23 @@ namespace CndXML
 
             writer.BaseStream.Seek(0x8, SeekOrigin.Begin);
             writer.Write(Filesize);
+        }
+
+        public void WriteFooter(EndianBinaryWriter writer)
+        {
+            writer.BaseStream.Seek(0, SeekOrigin.End);
+            while ((writer.BaseStream.Length & 0xF) != 0x0
+                && (writer.BaseStream.Length & 0xF) != 0x4
+                && (writer.BaseStream.Length & 0xF) != 0x8
+                && (writer.BaseStream.Length & 0xF) != 0xC)
+                writer.Write((byte)0);
+
+            writer.BaseStream.Seek(0x10, SeekOrigin.Begin);
+            writer.Write((uint)writer.BaseStream.Length);
+            writer.BaseStream.Seek(0, SeekOrigin.End);
+            
+            writer.Write(new byte[] { 0x52, 0x4C, 0x4F, 0x43 });
+            writer.Write((long)0);
         }
 
         public bool isValid()
