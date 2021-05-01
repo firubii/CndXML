@@ -16,8 +16,25 @@ namespace CndXML
         {
             if (args.Length > 1)
             {
+                string outFile = (Path.GetDirectoryName(args[1]) + "\\" + Path.GetFileNameWithoutExtension(args[1])).TrimStart('\\');
+
+                if (args.Contains("-o"))
+                {
+                    int index = args.ToList().IndexOf("-o");
+                    if (args.Length < index + 1)
+                    {
+                        Console.WriteLine("Error: No output file specified.");
+                        return;
+                    }
+
+                    outFile = args[index + 1];
+                }
+
                 if (args[0] == "-d")
                 {
+                    if (!outFile.EndsWith(".xml"))
+                        outFile += ".xml";
+
                     if (!File.Exists(args[1]))
                     {
                         Console.WriteLine("Error: File does not exist!");
@@ -167,12 +184,15 @@ namespace CndXML
 
                     xml.AppendChild(root);
 
-                    xml.Save(Path.GetDirectoryName(args[1]) + "\\" + Path.GetFileNameWithoutExtension(args[1]) + ".xml");
+                    xml.Save(outFile);
 
-                    Console.WriteLine($"Written XML file to {Path.GetDirectoryName(args[1])}\\{Path.GetFileNameWithoutExtension(args[1])}.xml");
+                    Console.WriteLine($"Written XML file to {outFile}");
                 }
                 else if (args[0] == "-a")
                 {
+                    if (!outFile.EndsWith(".cndbin"))
+                        outFile += ".cndbin";
+
                     if (!File.Exists(args[1]))
                     {
                         Console.WriteLine("Error: File does not exist!");
@@ -325,18 +345,25 @@ namespace CndXML
                         cnd.RenderSection.Add(cStruct);
                     }
 
-                    cnd.Write(Path.GetDirectoryName(args[1]) + "\\" + Path.GetFileNameWithoutExtension(args[1]) + ".cndbin");
-                    Console.WriteLine($"Written CND binary to {Path.GetDirectoryName(args[1])}\\{Path.GetFileNameWithoutExtension(args[1])}.cndbin");
+                    cnd.Write(outFile);
+                    Console.WriteLine($"Written CND binary to {outFile}");
                 }
                 else
                 {
-                    Console.WriteLine("Usage: CndXML.exe <-d|-a> <cndbin path>");
+                    PrintHelp();
                 }
             }
             else
             {
-                Console.WriteLine("Usage: CndXML.exe <-d|-a> <cndbin path>");
+                PrintHelp();
             }
+        }
+
+        static void PrintHelp()
+        {
+            Console.WriteLine("Usage: CndXML.exe <-d|-a> <cndbin path> [options]");
+            Console.WriteLine("\nOptions:");
+            Console.WriteLine("  -o <path>: Sets output filepath");
         }
     }
 }
