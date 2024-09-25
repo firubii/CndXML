@@ -118,7 +118,7 @@ namespace CndXML
 
         static void PrintHelp()
         {
-            Console.WriteLine("Usage: CndXML.exe <-d|-a> <cndbin path> [options]");
+            Console.WriteLine("Usage: CndXML.exe <-d|-a> <in path> [options]");
             Console.WriteLine("\nOptions:");
             Console.WriteLine("  --ksa:     Sets to old Cinemo mode (Star Allies, Super Kirby Clash)");
             Console.WriteLine("  -o <path>: Sets output filepath");
